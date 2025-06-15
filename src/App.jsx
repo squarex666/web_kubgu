@@ -96,6 +96,7 @@ function App() {
           }
         );
 
+
         setMovies(response.data.items.slice(0, MOVIES_COUNT));
       } catch (err) {
         console.error('Ошибка Кинопоиск API:', err);
