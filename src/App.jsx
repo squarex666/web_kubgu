@@ -1,109 +1,119 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import ToDoForm from "./AddTask";
 import ToDo from "./Task";
 import axios from 'axios';
 
 const TASKS_STORAGE_KEY = 'tasks-list-project-web';
+const YEARS = Array.from({ length: 16 }, (_, i) => 2010 + i); // 2010-2025
+const CRYPTO_UPDATE_INTERVAL = 5 * 60 * 1000; // 5 минут в миллисекундах
+const MOVIES_COUNT = 4; // Количество отображаемых фильмов
+
+// Emoji для криптовалют
+const CRYPTO_EMOJIS = {
+  BTC: '₿', // Символ биткоина
+  ETH: 'Ξ', // Символ эфира
+  SOL: '◎'  // Символ соланы
+};
 
 function App() {
-  // Состояния приложения
-  const [rates, setRates] = useState({});
-  const [mapUrl, setMapUrl] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [location, setLocation] = useState(null);
-  const [todos, setTodos] = useState([]);
+  const [cryptoRates, setCryptoRates] = useState({
+    BTC: 'Загрузка...',
+    ETH: 'Загрузка...',
+    SOL: 'Загрузка...'
+  });
+  const [movies, setMovies] = useState([]);
+  const [selectedYear, setSelectedYear] = useState(2025);
+  const [loading, setLoading] = useState({
+    crypto: true,
+    movies: true
+  });
+  const [error, setError] = useState({
+    crypto: '',
+    movies: ''
+  });
+  const [todos, setTodos] = useState(() => {
+    try {
+      const storedTasks = localStorage.getItem(TASKS_STORAGE_KEY);
+      return storedTasks ? JSON.parse(storedTasks) : [];
+    } catch (error) {
+      console.error('Ошибка при загрузке задач:', error);
+      return [];
+    }
+  });
+  const lastUpdateTime = useRef(0);
 
-  // Получение курсов валют от World Bank API
+  // Получение курсов криптовалют от Binance
   useEffect(() => {
-    async function fetchCurrencyRates() {
+    const fetchCryptoRates = async () => {
+      try {
+        const now = Date.now();
+        if (now - lastUpdateTime.current < CRYPTO_UPDATE_INTERVAL) {
+          return;
+        }
+
+        const [btcResponse, ethResponse, solResponse] = await Promise.all([
+          axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'),
+          axios.get('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT'),
+          axios.get('https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT')
+        ]);
+
+        setCryptoRates({
+          BTC: parseFloat(btcResponse.data.price).toFixed(2),
+          ETH: parseFloat(ethResponse.data.price).toFixed(2),
+          SOL: parseFloat(solResponse.data.price).toFixed(2)
+        });
+
+        lastUpdateTime.current = now;
+        setError(prev => ({ ...prev, crypto: '' }));
+      } catch (err) {
+        console.error('Ошибка Binance API:', err);
+        setError(prev => ({ ...prev, crypto: 'Не удалось загрузить курсы' }));
+      } finally {
+        setLoading(prev => ({ ...prev, crypto: false }));
+      }
+    };
+
+    fetchCryptoRates();
+    const interval = setInterval(fetchCryptoRates, CRYPTO_UPDATE_INTERVAL);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Получение топ-4 фильмов за выбранный год
+  useEffect(() => {
+    const fetchMovies = async () => {
+      setLoading(prev => ({ ...prev, movies: true }));
+      setError(prev => ({ ...prev, movies: '' }));
+
       try {
         const response = await axios.get(
-          'https://api.worldbank.org/v2/country/all/indicator/PA.NUS.FCRF?format=json&date=2025'
+          `https://kinopoiskapiunofficial.tech/api/v2.2/films?yearFrom=${selectedYear}&yearTo=${selectedYear}&order=NUM_VOTE&type=FILM`,
+          {
+            headers: {
+              'X-API-KEY': '61c118bd-ce1c-4b0e-8740-841563644f22',
+              'Content-Type': 'application/json'
+            }
+          }
         );
 
-        // Проверка структуры ответа
-        if (!response.data || response.data.length < 2) {
-          throw new Error('Неверный формат ответа от API');
-        }
-
-        const currencyData = response.data[1];
-        const usdRate = currencyData.find(item => item.country?.id === 'US')?.value;
-        const eurRate = currencyData.find(item => item.country?.id === 'EMU')?.value;
-
-        if (!usdRate || !eurRate) {
-          console.log('Полученные данные:', currencyData);
-          throw new Error('Не удалось извлечь курсы валют');
-        }
-
-        setRates({
-          USDrate: (1 / usdRate).toFixed(4),
-          EURrate: (1 / eurRate).toFixed(4)
-        });
+        setMovies(response.data.items.slice(0, MOVIES_COUNT));
       } catch (err) {
-        console.error('Ошибка загрузки курсов:', err);
-        // Запасные значения на случай ошибки
-        setRates({
-          USDrate: '78.600',
-          EURrate: '89.791'
-        });
-        setError('Курсы загружены с запасного источника');
+        console.error('Ошибка Кинопоиск API:', err);
+        setError(prev => ({ ...prev, movies: 'Не удалось загрузить фильмы' }));
+        setMovies([]);
+      } finally {
+        setLoading(prev => ({ ...prev, movies: false }));
       }
-    }
+    };
 
-    fetchCurrencyRates();
-  }, []);
+    fetchMovies();
+  }, [selectedYear]);
 
-  // Получение геолокации и создание карты
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setError('Геолокация не поддерживается браузером');
-      setLoading(false);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        const { latitude: lat, longitude: lon } = position.coords;
-        setLocation({ lat, lon });
-
-        // Формируем URL для OpenStreetMap
-        const osmUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${
-          lon-0.01},${lat-0.01},${lon+0.01},${lat+0.01
-        }&layer=mapnik&marker=${lat},${lon}`;
-
-        setMapUrl(osmUrl);
-        setLoading(false);
-      },
-      err => {
-        console.error('Ошибка геолокации:', err);
-        setError('Не удалось определить местоположение');
-        setLoading(false);
-      }
-    );
-  }, []);
-
-  // Работа с задачами
-  useEffect(() => {
-    const storedTasks = localStorage.getItem(TASKS_STORAGE_KEY);
-    if (storedTasks) {
-      try {
-        const parsedTasks = JSON.parse(storedTasks);
-        if (Array.isArray(parsedTasks)) {
-          setTodos(parsedTasks);
-        }
-      } catch (error) {
-        console.error('Ошибка чтения задач:', error);
-      }
-    }
-  }, []);
-
+  // Сохранение задач в localStorage при изменении
   useEffect(() => {
     localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(todos));
   }, [todos]);
 
-  // Функции управления задачами
   const addTask = (userInput) => {
     if (userInput.trim()) {
       const newItem = {
@@ -125,43 +135,19 @@ function App() {
     ));
   };
 
+  // Открытие страницы фильма на Кинопоиске
+  const openKinopoisk = (filmId) => {
+    window.open(`https://www.kinopoisk.ru/film/${filmId}/`, '_blank');
+  };
+
+  // Открытие торгов на Binance
+  const openBinanceTrading = (symbol) => {
+    window.open(`https://www.binance.com/ru/trade/${symbol}_USDT`, '_blank');
+  };
+
   return (
     <div className="App">
-      {/* Шапка с курсами и картой */}
-      {loading && <div className="loading">Загрузка данных...</div>}
-
-      {!loading && (
-        <div className="info-panel">
-          <div className="currency-rates">
-            <h3>Курсы валют:</h3>
-            <div>1 USD = {rates.USDrate} RUB</div>
-            <div>1 EUR = {rates.EURrate} RUB</div>
-            {error && <div className="error-message">{error}</div>}
-          </div>
-
-          {location && (
-            <div className="map-container">
-              <h3>Ваше местоположение:</h3>
-              <iframe
-                title="OpenStreetMap"
-                width="100%"
-                height="300"
-                frameBorder="0"
-                src={mapUrl}
-              />
-              <a
-                href={`https://www.openstreetmap.org/#map=16/${location.lat}/${location.lon}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Открыть в полном размере
-              </a>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Список задач */}
+      {/* Блок с задачами - теперь в самом верху */}
       <div className="todo-container">
         <h2>Список задач: {todos.length}</h2>
         <ToDoForm addTask={addTask} />
@@ -177,9 +163,82 @@ function App() {
           ))}
         </div>
       </div>
+
+      {/* Блок с криптовалютами и фильмами */}
+      <div className="info-panel">
+        <div className="crypto-rates">
+          <h3>Курсы криптовалют:</h3>
+          {loading.crypto ? (
+            <div>Загрузка...</div>
+          ) : (
+            <div className="crypto-grid">
+              {Object.entries(cryptoRates).map(([symbol, rate]) => (
+                <div
+                  key={symbol}
+                  className="crypto-item"
+                  onClick={() => openBinanceTrading(symbol)}
+                >
+                  <span className="crypto-emoji">{CRYPTO_EMOJIS[symbol]}</span>
+                  <div className="crypto-info">
+                    <div className="crypto-name">{symbol}</div>
+                    <div className="crypto-rate">1 {symbol} = {rate} USDT</div>
+                  </div>
+                </div>
+              ))}
+              {error.crypto && <div className="error-message">{error.crypto}</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Блок с фильмами */}
+        <div className="movies-widget">
+          <div className="movies-header">
+            <h3>Топ-{MOVIES_COUNT} фильмов</h3>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="year-selector"
+            >
+              {YEARS.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          {loading.movies ? (
+            <div className="loading-movies">Загрузка фильмов...</div>
+          ) : error.movies ? (
+            <div className="error-message">{error.movies}</div>
+          ) : movies.length > 0 ? (
+            <div className="movies-grid">
+              {movies.map(movie => (
+                <div
+                  key={movie.kinopoiskId || movie.filmId}
+                  className="movie-card"
+                  onClick={() => openKinopoisk(movie.kinopoiskId || movie.filmId)}
+                >
+                  <img
+                    src={movie.posterUrlPreview || 'https://via.placeholder.com/100x150?text=No+poster'}
+                    alt={movie.nameRu || movie.nameEn}
+                    className="movie-poster"
+                  />
+                  <div className="movie-info">
+                    <div className="movie-title">{movie.nameRu || movie.nameEn}</div>
+                    <div className="movie-year">{movie.year}</div>
+                    <div className="movie-rating">
+                      Рейтинг: {movie.ratingKinopoisk || movie.ratingImdb || 'Н/Д'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="no-movies">Нет данных о фильмах за этот год</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-
 
 export default App;

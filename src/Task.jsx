@@ -9,26 +9,23 @@ import React from "react";
  */
 const ToDo = ({ todo, toggleTask, removeTask }) => {
   return (
-    <div
-      key={todo.id + todo.key}
-      className="item-todo"
-    >
+    <div className="item-todo">
       {/* Блок с текстом задачи */}
       <div
+        className={`item-text ${todo.complete ? "completed" : ""}`}
         onClick={() => toggleTask(todo.id)}
-        className={todo.complete ? "item-text strike" : "item-text"}
       >
         {todo.task}
       </div>
 
-      {/* Кнопка удаления задачи */}
-      <div
+      {/* Кнопка удаления задачи - теперь с правильным позиционированием */}
+      <button
         className="item-delete"
         onClick={() => removeTask(todo.id)}
         aria-label="Удалить задачу"
       >
         ×
-      </div>
+      </button>
     </div>
   );
 };
