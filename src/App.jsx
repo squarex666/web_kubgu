@@ -5,7 +5,7 @@ import ToDo from "./Task";
 import axios from 'axios';
 
 const TASKS_STORAGE_KEY = 'tasks-list-project-web';
-const YEARS = Array.from({ length: 16 }, (_, i) => 2010 + i); // 2010-2025
+const YEARS = Array.from({ length: 16 }, (_, i) => 2025 - i); // 2025-2010
 const CRYPTO_UPDATE_INTERVAL = 5 * 60 * 1000; // 5 минут в миллисекундах
 const MOVIES_COUNT = 4; // Количество отображаемых фильмов
 
@@ -96,8 +96,18 @@ function App() {
           }
         );
 
+        // Сортируем фильмы по рейтингу (от высшего к низшему)
+        const sortedMovies = response.data.items
+          .filter(movie => movie.ratingKinopoisk) // Фильтруем фильмы с рейтингом
+          .sort((a, b) => {
+            const ratingA = a.ratingKinopoisk || 0;
+            const ratingB = b.ratingKinopoisk || 0;
+            return ratingB - ratingA; // Сортировка по убыванию
+          })
+          .slice(0, MOVIES_COUNT); // Берем топ-N фильмов
 
-        setMovies(response.data.items.slice(0, MOVIES_COUNT));
+
+        setMovies(sortedMovies);
       } catch (err) {
         console.error('Ошибка Кинопоиск API:', err);
         setError(prev => ({ ...prev, movies: 'Не удалось загрузить фильмы' }));
@@ -194,7 +204,7 @@ function App() {
         {/* Блок с фильмами */}
         <div className="movies-widget">
           <div className="movies-header">
-            <h3>Топ-{MOVIES_COUNT} фильмов</h3>
+            <h3>Топ фильмов по рейтингу Кинопоиска</h3>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
